@@ -23,89 +23,99 @@ class RequestOTPView(APIView):
     permission_classes = [AllowAny]
     
     def post(self, request):
-        serializer = OTPRequestSerializer(data=request.data)
-        if serializer.is_valid():
-            identifier = serializer.validated_data['identifier']
-            is_email = '@' in identifier
-            
-            if not is_email:
-                # Phone number signups do not require OTP
+        try:
+            serializer = OTPRequestSerializer(data=request.data)
+            if serializer.is_valid():
+                identifier = serializer.validated_data['identifier']
+                is_email = '@' in identifier
+                
+                if not is_email:
+                    # Phone number signups do not require OTP
+                    return Response({
+                        "message": "OTP verification is not required for phone numbers.",
+                        "otp_required": False
+                    }, status=status.HTTP_200_OK)
+                
+                otp_type = OTPVerification.Type.EMAIL
+                raw_otp = OTPVerification.generate_raw_otp()
+                
+                # Create OTP Record
+                otp_record = OTPVerification(identifier=identifier, otp_type=otp_type)
+                otp_record.set_otp(raw_otp)
+                otp_record.save()
+                
+                # Dispatch OTP via Gmail SMTP / Django email backend
+                try:
+                    subject = "Your Verification Code - DayPilot"
+                    message = f"Hello,\n\nYour verification code is: {raw_otp}\nThis code will expire in 10 minutes.\n\nThank you!"
+                    send_mail(
+                        subject=subject,
+                        message=message,
+                        from_email=settings.DEFAULT_FROM_EMAIL,
+                        recipient_list=[identifier],
+                        fail_silently=False
+                    )
+                except Exception as e:
+                    print(f"[Email Dispatch Error] Failed to send email to {identifier}: {str(e)}")
+                    # Still output to console in dev mode
+                    print(f"FALLBACK OTP DISPATCH -> To: {identifier} | OTP: {raw_otp}")
+                
                 return Response({
-                    "message": "OTP verification is not required for phone numbers.",
-                    "otp_required": False
+                    "message": "OTP sent successfully to email.",
+                    "otp_required": True
                 }, status=status.HTTP_200_OK)
-            
-            otp_type = OTPVerification.Type.EMAIL
-            raw_otp = OTPVerification.generate_raw_otp()
-            
-            # Create OTP Record
-            otp_record = OTPVerification(identifier=identifier, otp_type=otp_type)
-            otp_record.set_otp(raw_otp)
-            otp_record.save()
-            
-            # Dispatch OTP via Gmail SMTP / Django email backend
-            try:
-                subject = "Your Verification Code - DayPilot"
-                message = f"Hello,\n\nYour verification code is: {raw_otp}\nThis code will expire in 10 minutes.\n\nThank you!"
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[identifier],
-                    fail_silently=False
-                )
-            except Exception as e:
-                print(f"[Email Dispatch Error] Failed to send email to {identifier}: {str(e)}")
-                # Still output to console in dev mode
-                print(f"FALLBACK OTP DISPATCH -> To: {identifier} | OTP: {raw_otp}")
-            
-            return Response({
-                "message": "OTP sent successfully to email.",
-                "otp_required": True
-            }, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            print(f"[RequestOTP Exception] {str(e)}")
+            return Response({"error": f"Failed to process OTP request: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
     
     def post(self, request):
-        serializer = OTPVerifySerializer(data=request.data)
-        if serializer.is_valid():
-            identifier = serializer.validated_data['identifier']
-            otp = serializer.validated_data['otp']
-            
-            try:
-                otp_record = OTPVerification.objects.filter(
-                    identifier=identifier, 
-                    is_used=False,
-                    expires_at__gt=timezone.now()
-                ).latest('created_at')
-            except OTPVerification.DoesNotExist:
-                return Response({"error": "OTP expired or does not exist."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            serializer = OTPVerifySerializer(data=request.data)
+            if serializer.is_valid():
+                identifier = serializer.validated_data['identifier']
+                otp = serializer.validated_data['otp']
                 
-            if otp_record.attempts >= 3:
-                return Response({"error": "Too many failed attempts."}, status=status.HTTP_400_BAD_REQUEST)
-                
-            if otp_record.check_otp(otp):
-                # Valid OTP, but we do NOT mark it used here yet, 
-                # because they need it to register/reset password.
-                return Response({"message": "OTP verified. Proceed to register/reset."}, status=status.HTTP_200_OK)
-            else:
-                otp_record.attempts += 1
-                otp_record.save()
-                return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
-                
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                try:
+                    otp_record = OTPVerification.objects.filter(
+                        identifier=identifier, 
+                        is_used=False,
+                        expires_at__gt=timezone.now()
+                    ).latest('created_at')
+                except OTPVerification.DoesNotExist:
+                    return Response({"error": "OTP expired or does not exist."}, status=status.HTTP_400_BAD_REQUEST)
+                    
+                if otp_record.attempts >= 3:
+                    return Response({"error": "Too many failed attempts."}, status=status.HTTP_400_BAD_REQUEST)
+                    
+                if otp_record.check_otp(otp):
+                    return Response({"message": "OTP verified. Proceed to register/reset."}, status=status.HTTP_200_OK)
+                else:
+                    otp_record.attempts += 1
+                    otp_record.save()
+                    return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
+                    
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            print(f"[VerifyOTP Exception] {str(e)}")
+            return Response({"error": f"Failed to verify OTP: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
     
     def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            return Response({"message": "Account created successfully."}, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            serializer = RegisterSerializer(data=request.data)
+            if serializer.is_valid():
+                user = serializer.save()
+                return Response({"message": "Account created successfully."}, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            print(f"[Register Exception] {str(e)}")
+            return Response({"error": f"Registration failed: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 class LoginView(APIView):
     permission_classes = [AllowAny]

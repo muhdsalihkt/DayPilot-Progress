@@ -143,10 +143,33 @@ SIMPLE_JWT = {
 }
 
 # CORS Configuration
+CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'True') == 'True'
+
 CORS_ALLOWED_ORIGINS = [
-    origin.strip() for origin in os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',') if origin.strip()
+    origin.strip() for origin in os.getenv(
+        'CORS_ALLOWED_ORIGINS', 
+        'http://localhost:3000,http://127.0.0.1:3000,https://day-pilot-progress-u9ip.vercel.app'
+    ).split(',') if origin.strip()
 ]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+    r"^http://localhost:\d+$",
+    r"^http://127\.0\.0\.1:\d+$",
+]
+
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # Email Configuration (Gmail SMTP)
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
