@@ -41,7 +41,7 @@ class OTPVerifySerializer(serializers.Serializer):
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     identifier = serializers.CharField(max_length=255, write_only=True) # email or phone used for reg
-    otp = serializers.CharField(max_length=6, write_only=True)
+    otp = serializers.CharField(max_length=6, write_only=True, required=False, allow_blank=True)
     
     class Meta:
         model = User
@@ -50,28 +50,32 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, data):
         identifier = data.get('identifier')
         otp = data.get('otp')
+        is_email = '@' in identifier if identifier else False
         
-        # Verify OTP
-        try:
-            otp_record = OTPVerification.objects.filter(
-                identifier=identifier, 
-                is_used=False
-            ).latest('created_at')
-        except OTPVerification.DoesNotExist:
-            raise serializers.ValidationError("No active OTP found for this identifier.")
+        if is_email:
+            if not otp:
+                raise serializers.ValidationError({"otp": "OTP is required for email registration."})
+            try:
+                otp_record = OTPVerification.objects.filter(
+                    identifier=identifier, 
+                    is_used=False
+                ).latest('created_at')
+            except OTPVerification.DoesNotExist:
+                raise serializers.ValidationError("No active OTP found for this identifier.")
+                
+            if not otp_record.check_otp(otp):
+                otp_record.attempts += 1
+                otp_record.save()
+                raise serializers.ValidationError("Invalid OTP.")
+                
+            data['otp_record'] = otp_record
             
-        if not otp_record.check_otp(otp):
-            otp_record.attempts += 1
-            otp_record.save()
-            raise serializers.ValidationError("Invalid OTP.")
-            
-        data['otp_record'] = otp_record
         return data
         
     def create(self, validated_data):
         identifier = validated_data['identifier']
         password = validated_data['password']
-        otp_record = validated_data['otp_record']
+        otp_record = validated_data.get('otp_record')
         
         is_email = '@' in identifier
         
@@ -83,11 +87,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         
         user = User.objects.create_user(**user_data, password=password)
         
-        otp_record.is_used = True
-        otp_record.user = user
-        otp_record.save()
+        if otp_record:
+            otp_record.is_used = True
+            otp_record.user = user
+            otp_record.save()
         
         return user
+
 
 
 class CustomTokenObtainSerializer(serializers.Serializer):

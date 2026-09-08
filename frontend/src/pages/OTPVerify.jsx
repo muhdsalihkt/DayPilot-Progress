@@ -9,11 +9,12 @@ const OTPVerify = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [step, setStep] = useState(1); // 1 = OTP, 2 = Set Password
-  
   const location = useLocation();
   const navigate = useNavigate();
   const identifier = location.state?.identifier;
+  const skipOtp = location.state?.skipOtp || false;
+
+  const [step, setStep] = useState(skipOtp ? 2 : 1); // 1 = OTP, 2 = Set Password
 
   useEffect(() => {
     if (!identifier) {
@@ -59,7 +60,8 @@ const OTPVerify = () => {
     setError('');
     
     try {
-      await register(identifier, password, otp.join(''));
+      const otpCode = skipOtp ? '' : otp.join('');
+      await register(identifier, password, otpCode);
       navigate('/login');
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create account');

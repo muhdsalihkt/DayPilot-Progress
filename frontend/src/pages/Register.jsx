@@ -16,11 +16,17 @@ const Register = () => {
     setError('');
     
     try {
-      await requestOtp(identifier);
-      // Pass identifier to OTP verification page
-      navigate('/verify-otp', { state: { identifier } });
+      const isEmail = identifier.includes('@');
+      if (isEmail) {
+        await requestOtp(identifier);
+        // Pass identifier to OTP verification page for email verification
+        navigate('/verify-otp', { state: { identifier, isEmail: true, skipOtp: false } });
+      } else {
+        // Phone signup - bypass OTP step and navigate straight to Set Password (step 2)
+        navigate('/verify-otp', { state: { identifier, isEmail: false, skipOtp: true } });
+      }
     } catch (err) {
-      setError(err.response?.data?.identifier?.[0] || 'Failed to request OTP. Please try again.');
+      setError(err.response?.data?.identifier?.[0] || 'Failed to process signup. Please try again.');
     } finally {
       setLoading(false);
     }

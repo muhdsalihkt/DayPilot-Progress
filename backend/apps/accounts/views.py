@@ -12,6 +12,12 @@ from .serializers import (
 )
 from .models import OTPVerification
 from django.utils import timezone
+from django.contrib.auth import get_user_model
+from django.core.mail import send_mail
+from django.conf import settings
+
+User = get_user_model()
+
 
 class RequestOTPView(APIView):
     permission_classes = [AllowAny]
@@ -21,8 +27,15 @@ class RequestOTPView(APIView):
         if serializer.is_valid():
             identifier = serializer.validated_data['identifier']
             is_email = '@' in identifier
-            otp_type = OTPVerification.Type.EMAIL if is_email else OTPVerification.Type.SMS
             
+            if not is_email:
+                # Phone number signups do not require OTP
+                return Response({
+                    "message": "OTP verification is not required for phone numbers.",
+                    "otp_required": False
+                }, status=status.HTTP_200_OK)
+            
+            otp_type = OTPVerification.Type.EMAIL
             raw_otp = OTPVerification.generate_raw_otp()
             
             # Create OTP Record
@@ -30,14 +43,26 @@ class RequestOTPView(APIView):
             otp_record.set_otp(raw_otp)
             otp_record.save()
             
-            # MOCK SENDER
-            print(f"\n{'='*40}")
-            print(f"MOCK OTP DISPATCH")
-            print(f"To: {identifier}")
-            print(f"OTP: {raw_otp}")
-            print(f"{'='*40}\n")
+            # Dispatch OTP via Gmail SMTP / Django email backend
+            try:
+                subject = "Your Verification Code - DayPilot"
+                message = f"Hello,\n\nYour verification code is: {raw_otp}\nThis code will expire in 10 minutes.\n\nThank you!"
+                send_mail(
+                    subject=subject,
+                    message=message,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[identifier],
+                    fail_silently=False
+                )
+            except Exception as e:
+                print(f"[Email Dispatch Error] Failed to send email to {identifier}: {str(e)}")
+                # Still output to console in dev mode
+                print(f"FALLBACK OTP DISPATCH -> To: {identifier} | OTP: {raw_otp}")
             
-            return Response({"message": "OTP sent successfully."}, status=status.HTTP_200_OK)
+            return Response({
+                "message": "OTP sent successfully to email.",
+                "otp_required": True
+            }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class VerifyOTPView(APIView):
@@ -64,7 +89,6 @@ class VerifyOTPView(APIView):
             if otp_record.check_otp(otp):
                 # Valid OTP, but we do NOT mark it used here yet, 
                 # because they need it to register/reset password.
-                # In a more complex flow, we'd return a temporary token.
                 return Response({"message": "OTP verified. Proceed to register/reset."}, status=status.HTTP_200_OK)
             else:
                 otp_record.attempts += 1
@@ -154,35 +178,42 @@ class ResetPasswordView(APIView):
         otp = request.data.get('otp')
         new_password = request.data.get('new_password')
         
-        if not identifier or not otp or not new_password:
+        if not identifier or not new_password:
             return Response({"error": "Missing required fields"}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            otp_record = OTPVerification.objects.filter(
-                identifier=identifier, 
-                is_used=False
-            ).latest('created_at')
-        except OTPVerification.DoesNotExist:
-            return Response({"error": "No active OTP found."}, status=status.HTTP_400_BAD_REQUEST)
-            
-        if not otp_record.check_otp(otp):
-            otp_record.attempts += 1
-            otp_record.save()
-            return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
-            
         is_email = '@' in identifier
+        otp_record = None
+
+        if is_email:
+            if not otp:
+                return Response({"error": "OTP is required for email password reset."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                otp_record = OTPVerification.objects.filter(
+                    identifier=identifier, 
+                    is_used=False
+                ).latest('created_at')
+            except OTPVerification.DoesNotExist:
+                return Response({"error": "No active OTP found."}, status=status.HTTP_400_BAD_REQUEST)
+                
+            if not otp_record.check_otp(otp):
+                otp_record.attempts += 1
+                otp_record.save()
+                return Response({"error": "Invalid OTP."}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             user = User.objects.get(email=identifier) if is_email else User.objects.get(phone=identifier)
             user.set_password(new_password)
             user.save()
             
-            otp_record.is_used = True
-            otp_record.user = user
-            otp_record.save()
+            if is_email and otp_record:
+                otp_record.is_used = True
+                otp_record.user = user
+                otp_record.save()
             
             return Response({"message": "Password reset successfully."}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
 
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.exceptions import InvalidToken

@@ -9,7 +9,7 @@ from django.contrib.auth.hashers import make_password, check_password
 
 
 class CustomUserManager(BaseUserManager):
-    def create_user(self, email, phone=None, password=None, **extra_fields):
+    def create_user(self, email=None, phone=None, password=None, **extra_fields):
         if not email and not phone:
             raise ValueError('Either email or phone must be set')
         
