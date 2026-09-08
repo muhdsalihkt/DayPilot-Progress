@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Mail, Phone, Lock, ArrowRight, Loader2 } from 'lucide-react';
 import { requestOtp } from '../api/auth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const Register = () => {
   const [identifier, setIdentifier] = useState('');
@@ -93,9 +93,9 @@ const Register = () => {
 
         <p className="mt-8 text-center text-sm text-gray-400">
           Already have an account?{' '}
-          <a href="/login" className="font-medium text-blue-400 hover:text-blue-300 transition-colors">
+          <Link to="/login" className="font-medium text-blue-400 hover:text-blue-300 transition-colors">
             Sign in
-          </a>
+          </Link>
         </p>
       </motion.div>
     </div>

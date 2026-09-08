@@ -55,8 +55,9 @@ apiClient.interceptors.response.use(
         // If refresh fails (e.g., refresh token is expired or invalid), log out
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
-        // Force redirect to login only if we aren't already there
-        if (window.location.pathname !== '/login') {
+        // Force redirect to login only if we aren't already on an auth route
+        const isAuthRoute = ['/login', '/register', '/verify-otp'].some(p => window.location.pathname.startsWith(p));
+        if (!isAuthRoute) {
           window.location.href = '/login';
         }
         return Promise.reject(refreshError);
