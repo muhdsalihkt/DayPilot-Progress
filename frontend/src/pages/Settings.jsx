@@ -136,14 +136,6 @@ const Settings = () => {
               Settings
             </h1>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all"
-            title="Log Out"
-          >
-            <LogOut className="w-4 h-4" />
-            Log Out
-          </button>
         </header>
 
         {/* Account & Session Card */}
