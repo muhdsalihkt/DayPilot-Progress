@@ -143,20 +143,24 @@ SIMPLE_JWT = {
 }
 
 # CORS Configuration
-CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'True') == 'True'
+# Default to allow all origins (works for local dev and Vercel production).
+# Set CORS_ALLOW_ALL_ORIGINS=False in Render env vars to restrict to specific origins.
+_cors_allow_all = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'True').strip().lower()
+CORS_ALLOW_ALL_ORIGINS = _cors_allow_all == 'true'
 
-CORS_ALLOWED_ORIGINS = [
-    origin.strip() for origin in os.getenv(
-        'CORS_ALLOWED_ORIGINS', 
-        'http://localhost:3000,http://127.0.0.1:3000,https://day-pilot-progress-u9ip.vercel.app'
-    ).split(',') if origin.strip()
-]
-
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r"^https://.*\.vercel\.app$",
-    r"^http://localhost:\d+$",
-    r"^http://127\.0\.0\.1:\d+$",
-]
+if not CORS_ALLOW_ALL_ORIGINS:
+    # Only used when CORS_ALLOW_ALL_ORIGINS is False
+    CORS_ALLOWED_ORIGINS = [
+        origin.strip() for origin in os.getenv(
+            'CORS_ALLOWED_ORIGINS',
+            'http://localhost:3000,http://127.0.0.1:3000,https://day-pilot-progress-u9ip.vercel.app'
+        ).split(',') if origin.strip()
+    ]
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://.*\.vercel\.app$",
+        r"^http://localhost:\d+$",
+        r"^http://127\.0\.0\.1:\d+$",
+    ]
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
