@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
   Settings as SettingsIcon, AlertOctagon, RefreshCcw, Loader2,
-  Plus, Trash2, Activity, CheckCircle, Clock
+  Plus, Trash2, Activity, CheckCircle, Clock, LogOut, User
 } from 'lucide-react';
 import { resetAccount } from '../api/onboarding';
 import { getActivities, addActivity, deleteActivity, deleteSchedule, generateSchedule } from '../api/scheduling';
+import { AuthContext } from '../context/AuthContext';
 
 const CATEGORY_OPTIONS = [
   { value: 'BRUSHING', label: '🪥 Brushing' },
@@ -26,9 +27,15 @@ const PREFERRED_TIME_OPTIONS = [
 ];
 
 const Settings = () => {
+  const { user, logout } = useContext(AuthContext);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
   const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   // Activities state
   const [activities, setActivities] = useState([]);
@@ -122,14 +129,47 @@ const Settings = () => {
       <div className="max-w-2xl mx-auto space-y-6">
 
         {/* Header */}
-        <header className="bg-white/5 border border-white/10 p-5 rounded-3xl sticky top-4 z-40 backdrop-blur-xl">
+        <header className="bg-white/5 border border-white/10 p-5 rounded-3xl sticky top-4 z-40 backdrop-blur-xl flex items-center justify-between">
           <div className="flex items-center gap-3">
             <SettingsIcon className="w-6 h-6 text-gray-400" />
             <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-200 to-gray-500">
               Settings
             </h1>
           </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all"
+            title="Log Out"
+          >
+            <LogOut className="w-4 h-4" />
+            Log Out
+          </button>
         </header>
+
+        {/* Account & Session Card */}
+        <div className="bg-white/5 border border-white/10 p-5 sm:p-6 rounded-3xl space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-500/10 p-3 rounded-2xl border border-blue-500/20">
+                <User className="w-5 h-5 text-blue-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white">Account & Session</h2>
+                <p className="text-gray-400 text-xs mt-0.5">
+                  Signed in as <span className="text-blue-300 font-semibold">{user?.email || user?.phone || 'User'}</span>
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 bg-red-600/20 hover:bg-red-600/30 border border-red-500/40 text-red-300 px-4 py-2.5 rounded-2xl text-sm font-bold transition-all shadow-lg shadow-red-500/10"
+            >
+              <LogOut className="w-4 h-4" />
+              Log Out
+            </button>
+          </div>
+        </div>
+
 
         {/* Regenerating Banner */}
         <AnimatePresence>
