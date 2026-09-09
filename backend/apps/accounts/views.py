@@ -1,3 +1,5 @@
+import threading
+import os
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -17,6 +19,24 @@ from django.core.mail import send_mail
 from django.conf import settings
 
 User = get_user_model()
+
+
+def _dispatch_otp_email_async(identifier, raw_otp):
+    """Background worker to send email without blocking the HTTP request."""
+    try:
+        subject = "Your Verification Code - DayPilot"
+        message = f"Hello,\n\nYour verification code is: {raw_otp}\nThis code will expire in 10 minutes.\n\nThank you!"
+        send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[identifier],
+            fail_silently=False
+        )
+        print(f"[Email Dispatch Success] Sent OTP to {identifier}")
+    except Exception as e:
+        print(f"[Email Dispatch Error] Failed to send email to {identifier}: {str(e)}")
+        print(f"FALLBACK OTP DISPATCH -> To: {identifier} | OTP: {raw_otp}")
 
 
 class RequestOTPView(APIView):
@@ -44,26 +64,22 @@ class RequestOTPView(APIView):
                 otp_record.set_otp(raw_otp)
                 otp_record.save()
                 
-                # Dispatch OTP via Gmail SMTP / Django email backend
-                try:
-                    subject = "Your Verification Code - DayPilot"
-                    message = f"Hello,\n\nYour verification code is: {raw_otp}\nThis code will expire in 10 minutes.\n\nThank you!"
-                    send_mail(
-                        subject=subject,
-                        message=message,
-                        from_email=settings.DEFAULT_FROM_EMAIL,
-                        recipient_list=[identifier],
-                        fail_silently=False
-                    )
-                except Exception as e:
-                    print(f"[Email Dispatch Error] Failed to send email to {identifier}: {str(e)}")
-                    # Still output to console in dev mode
-                    print(f"FALLBACK OTP DISPATCH -> To: {identifier} | OTP: {raw_otp}")
+                # Dispatch OTP asynchronously via background thread so HTTP response
+                # returns in milliseconds and NEVER causes Gunicorn worker timeout on Render
+                threading.Thread(
+                    target=_dispatch_otp_email_async,
+                    args=(identifier, raw_otp),
+                    daemon=True
+                ).start()
                 
-                return Response({
+                response_data = {
                     "message": "OTP sent successfully to email.",
                     "otp_required": True
-                }, status=status.HTTP_200_OK)
+                }
+                if settings.DEBUG or os.getenv('DEV_OTP_RESPONSE', 'False') == 'True':
+                    response_data["dev_otp"] = raw_otp
+                
+                return Response(response_data, status=status.HTTP_200_OK)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             print(f"[RequestOTP Exception] {str(e)}")
