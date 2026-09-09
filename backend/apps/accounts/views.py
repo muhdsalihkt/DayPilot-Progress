@@ -74,7 +74,7 @@ def _dispatch_otp_email_async(identifier, raw_otp):
                     "Content-Type": "application/json"
                 },
                 json={
-                    "sender": {"name": "DayPilot", "email": settings.DEFAULT_FROM_EMAIL},
+                    "sender": {"name": "DayPilot", "email": getattr(settings, 'BREVO_SENDER_EMAIL', '') or os.getenv('BREVO_SENDER_EMAIL', settings.DEFAULT_FROM_EMAIL)},
                     "to": [{"email": identifier}],
                     "subject": subject,
                     "htmlContent": html_content
