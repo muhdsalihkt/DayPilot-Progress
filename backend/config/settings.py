@@ -190,3 +190,8 @@ else:
 
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'noreply@daypilot.com')
 
+# HTTP-based email providers (Port 443 - works on Render Free Tier where SMTP is blocked)
+RESEND_API_KEY = os.getenv('RESEND_API_KEY', '')
+RESEND_FROM_EMAIL = os.getenv('RESEND_FROM_EMAIL', 'DayPilot <onboarding@resend.dev>')
+BREVO_API_KEY = os.getenv('BREVO_API_KEY', '')
+

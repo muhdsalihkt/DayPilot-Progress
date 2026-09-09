@@ -22,10 +22,75 @@ User = get_user_model()
 
 
 def _dispatch_otp_email_async(identifier, raw_otp):
-    """Background worker to send email without blocking the HTTP request."""
+    """Background worker to send email. Tries HTTP APIs (Resend/Brevo) first, then SMTP."""
+    import requests
+    subject = "Your Verification Code - DayPilot"
+    message = f"Hello,\n\nYour verification code is: {raw_otp}\nThis code will expire in 10 minutes.\n\nThank you!"
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; rounded: 10px;">
+        <h2 style="color: #6366f1;">DayPilot Verification</h2>
+        <p>Hello,</p>
+        <p>Your 6-digit verification code is:</p>
+        <div style="font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #111827; padding: 12px 0;">{raw_otp}</div>
+        <p style="color: #6b7280; font-size: 14px;">This code will expire in 10 minutes. If you did not request this, please ignore this email.</p>
+    </div>
+    """
+
+    # 1. Try Resend HTTP API (Port 443 - HTTPS, never blocked by Render)
+    resend_api_key = getattr(settings, 'RESEND_API_KEY', '') or os.getenv('RESEND_API_KEY', '')
+    if resend_api_key:
+        try:
+            from_email = getattr(settings, 'RESEND_FROM_EMAIL', '') or os.getenv('RESEND_FROM_EMAIL', 'DayPilot <onboarding@resend.dev>')
+            resp = requests.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {resend_api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "from": from_email,
+                    "to": [identifier],
+                    "subject": subject,
+                    "html": html_content
+                },
+                timeout=8
+            )
+            if resp.status_code in (200, 201):
+                print(f"[Resend Success] Sent OTP email to {identifier}")
+                return
+            else:
+                print(f"[Resend Error] {resp.status_code}: {resp.text}")
+        except Exception as e:
+            print(f"[Resend Exception] {str(e)}")
+
+    # 2. Try Brevo HTTP API (Port 443 - HTTPS, never blocked by Render)
+    brevo_api_key = getattr(settings, 'BREVO_API_KEY', '') or os.getenv('BREVO_API_KEY', '')
+    if brevo_api_key:
+        try:
+            resp = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={
+                    "api-key": brevo_api_key,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "sender": {"name": "DayPilot", "email": settings.DEFAULT_FROM_EMAIL},
+                    "to": [{"email": identifier}],
+                    "subject": subject,
+                    "htmlContent": html_content
+                },
+                timeout=8
+            )
+            if resp.status_code in (200, 201):
+                print(f"[Brevo Success] Sent OTP email to {identifier}")
+                return
+            else:
+                print(f"[Brevo Error] {resp.status_code}: {resp.text}")
+        except Exception as e:
+            print(f"[Brevo Exception] {str(e)}")
+
+    # 3. Fallback to standard Django send_mail (SMTP)
     try:
-        subject = "Your Verification Code - DayPilot"
-        message = f"Hello,\n\nYour verification code is: {raw_otp}\nThis code will expire in 10 minutes.\n\nThank you!"
         send_mail(
             subject=subject,
             message=message,
