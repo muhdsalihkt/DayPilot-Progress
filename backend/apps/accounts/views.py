@@ -36,7 +36,34 @@ def _dispatch_otp_email_async(identifier, raw_otp):
     </div>
     """
 
-    # 1. Try Resend HTTP API (Port 443 - HTTPS, never blocked by Render)
+    # 1. Try Brevo HTTP API (Port 443 - HTTPS, sends to ANY email without domain verification)
+    brevo_api_key = getattr(settings, 'BREVO_API_KEY', '') or os.getenv('BREVO_API_KEY', '')
+    if brevo_api_key:
+        try:
+            sender_email = getattr(settings, 'BREVO_SENDER_EMAIL', '') or os.getenv('BREVO_SENDER_EMAIL', settings.DEFAULT_FROM_EMAIL)
+            resp = requests.post(
+                "https://api.brevo.com/v3/smtp/email",
+                headers={
+                    "api-key": brevo_api_key,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "sender": {"name": "DayPilot", "email": sender_email},
+                    "to": [{"email": identifier}],
+                    "subject": subject,
+                    "htmlContent": html_content
+                },
+                timeout=8
+            )
+            if resp.status_code in (200, 201):
+                print(f"[Brevo Success] Sent OTP email to {identifier}")
+                return
+            else:
+                print(f"[Brevo Error] {resp.status_code}: {resp.text}")
+        except Exception as e:
+            print(f"[Brevo Exception] Failed to send via Brevo: {str(e)}")
+
+    # 2. Try Resend HTTP API (Port 443 - HTTPS, only for account owner unless domain verified)
     resend_api_key = getattr(settings, 'RESEND_API_KEY', '') or os.getenv('RESEND_API_KEY', '')
     if resend_api_key:
         try:
@@ -62,32 +89,6 @@ def _dispatch_otp_email_async(identifier, raw_otp):
                 print(f"[Resend Error] {resp.status_code}: {resp.text}")
         except Exception as e:
             print(f"[Resend Exception] {str(e)}")
-
-    # 2. Try Brevo HTTP API (Port 443 - HTTPS, never blocked by Render)
-    brevo_api_key = getattr(settings, 'BREVO_API_KEY', '') or os.getenv('BREVO_API_KEY', '')
-    if brevo_api_key:
-        try:
-            resp = requests.post(
-                "https://api.brevo.com/v3/smtp/email",
-                headers={
-                    "api-key": brevo_api_key,
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "sender": {"name": "DayPilot", "email": getattr(settings, 'BREVO_SENDER_EMAIL', '') or os.getenv('BREVO_SENDER_EMAIL', settings.DEFAULT_FROM_EMAIL)},
-                    "to": [{"email": identifier}],
-                    "subject": subject,
-                    "htmlContent": html_content
-                },
-                timeout=8
-            )
-            if resp.status_code in (200, 201):
-                print(f"[Brevo Success] Sent OTP email to {identifier}")
-                return
-            else:
-                print(f"[Brevo Error] {resp.status_code}: {resp.text}")
-        except Exception as e:
-            print(f"[Brevo Exception] {str(e)}")
 
     # 3. Fallback to standard Django send_mail (SMTP)
     try:
